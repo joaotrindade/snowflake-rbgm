@@ -4,17 +4,21 @@ import argparse
 import json
 import fnmatch
 
-def apply_permissions(snowflake_account, snowflake_user, snowflake_role, snowflake_warehouse, snowflake_region,
-                      permissions_file, grant_statements_file, revoke_statements_file, verbose):
-    if os.environ["SNOWSQL_PWD"] is None:
-        raise ValueError("The SNOWSQL_PWD environment variable has not been defined")
-    os.environ["SNOWFLAKE_ACCOUNT"] = snowflake_account
-    os.environ["SNOWFLAKE_USER"] = snowflake_user
-    os.environ["SNOWFLAKE_ROLE"] = snowflake_role
-    os.environ["SNOWFLAKE_WAREHOUSE"] = snowflake_warehouse
-    os.environ["SNOWFLAKE_REGION"] = snowflake_region
-    os.environ["SNOWFLAKE_AUTHENTICATOR"] = 'snowflake'
+class SnowflakeAuthentication:
+    def __init__(self, account, user, password, role, warehouse, region, authenticator):
+        self.account = account
+        self.user = user
+        self.password = password
+        self.role = role
+        self.warehouse = warehouse
+        self.region = region
+        self.authenticator = authenticator
 
+
+
+def apply_permissions(snowflake_auth, permissions_file, grant_statements_file, revoke_statements_file, verbose):
+
+    snowflake_role = snowflake_auth.role
     all_databases = fetch_databases(verbose)
     all_schemas = fetch_schemas(all_databases,verbose)
     print("databases found: {0}".format(all_databases))
@@ -247,15 +251,15 @@ def apply_permissions(snowflake_account, snowflake_user, snowflake_role, snowfla
 
 def execute_snowflake_query(snowflake_database, snowflake_schema, query, verbose):
     con = snowflake.connector.connect(
-        user=os.environ["SNOWFLAKE_USER"],
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
-        role=os.environ["SNOWFLAKE_ROLE"],
-        warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
+        user=snowflake_auth.user,
+        account=snowflake_auth.account,
+        role=snowflake_auth.role,
+        warehouse=snowflake_auth.warehouse,
         database=snowflake_database,
         schema=snowflake_schema,
-        region=os.environ["SNOWFLAKE_REGION"],
-        authenticator=os.environ["SNOWFLAKE_AUTHENTICATOR"],
-        password=os.environ["SNOWSQL_PWD"]
+        #region=snowflake_auth.region,
+        authenticator=snowflake_auth.authenticator,
+        password=snowflake_auth.password,
     )
     if verbose:
         print("SQL query: %s" % query)
@@ -506,7 +510,9 @@ if __name__ == '__main__':
     parser.add_argument('-w', '--snowflake-warehouse', type=str,
                         help='The name of the warehouse to use (e.g. DEPLOYER_WAREHOUSE)', required=True)
     parser.add_argument('--snowflake-region', type=str, help='The name of the snowflake region (e.g. ap-southeast-2)',
-                        required=True)
+                        required=False)
+    parser.add_argument('--authenticator', type=str, default="snowflake", help='Type of authenticator (snowflake, externalbrowser, okta endpoint url)',
+                        required=False)
     parser.add_argument('-p', '--permissions-file', default="Permissions.json", type=str,
                         help='The file containing the permission definitions')
     parser.add_argument('-g', '--grant-statements-file', default=None, type=str,
@@ -516,6 +522,9 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--verbose', type=bool, default=False)
     args = parser.parse_args()
 
+if os.environ["SNOWSQL_PWD"] is None:
+    raise ValueError("The SNOWSQL_PWD environment variable has not been defined")
 
-apply_permissions(args.snowflake_account, args.snowflake_user, args.snowflake_role, args.snowflake_warehouse,
-                  args.snowflake_region, args.permissions_file,args.grant_statements_file,args.revoke_statements_file, args.verbose)
+snowflake_auth = SnowflakeAuthentication(args.snowflake_account, args.snowflake_user, os.environ["SNOWSQL_PWD"], args.snowflake_role, args.snowflake_warehouse,  args.snowflake_region, args.authenticator)
+
+apply_permissions(snowflake_auth, args.permissions_file, args.grant_statements_file, args.revoke_statements_file, args.verbose)
